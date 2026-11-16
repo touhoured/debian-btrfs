@@ -1,0 +1,57 @@
+name: Build minimal Debian ECS VHD
+
+on:
+  workflow_dispatch:
+    inputs:
+      debian:
+        description: Debian release or rolling suite (forky = Debian 14)
+        type: choice
+        options: [bookworm, trixie, forky, testing, sid]
+        default: trixie
+        required: true
+      cloud_init:
+        description: Initialize SSH keys, network and disk using cloud-init
+        type: boolean
+        default: true
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # Debian's own build tools and current archive signing keys.
+    container:
+      image: debian:trixie-slim
+      # Share runner udev's loop devices and newly created partition nodes.
+      options: --privileged --volume /dev:/dev
+    defaults:
+      run:
+        shell: bash
+    env:
+      SUITE: ${{ inputs.debian }}
+      CLOUD_INIT: ${{ inputs.cloud_init }}
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates debootstrap debian-archive-keyring gpgv git \
+            btrfs-progs parted qemu-utils
+
+      - uses: actions/checkout@v4
+
+      - name: Build and verify
+        run: bash scripts/build-debian-ecs-btrfs.sh "$SUITE" "$CLOUD_INIT"
+
+      - name: Upload VHD and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-${{ inputs.debian }}-amd64-cloud-init-${{ inputs.cloud_init }}
+          path: output/
+          if-no-files-found: error
+
