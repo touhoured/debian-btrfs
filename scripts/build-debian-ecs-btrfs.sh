@@ -188,17 +188,20 @@ chroot "$root" grub-script-check /boot/grub/grub.cfg
 grep -F "root=UUID=$uuid" "$root/boot/grub/grub.cfg"
 rm -f "$root/boot/grub/device.map"
 sync
-# Reclaim deleted bootstrap/package data before creating the sparse VHD.
+# Reclaim deleted bootstrap/package data before converting the sparse images.
 fstrim "$root"
 umount --recursive "$root"
 btrfs check --readonly "$part"
 losetup --detach "$loop"
 loop=''
 
-image="output/debian-$SUITE-amd64-cloud-init-$CLOUD_INIT.vhd"
+image="output/debian-$SUITE-amd64-cloud-init-$CLOUD_INIT"
 # VHD is 'vpc' in QEMU. Avoid CHS capacity rounding.
-qemu-img convert -f raw -O vpc -o subformat=dynamic,force_size=on "$disk" "$image"
-qemu-img info -f vpc "$image"
+qemu-img convert -f raw -O vpc -o subformat=dynamic,force_size=on "$disk" "$image.vhd"
+qemu-img info -f vpc "$image.vhd"
 # VHD has no qemu-img check implementation; compare virtual disk contents.
-qemu-img compare -f raw -F vpc "$disk" "$image"
-(cd output && sha256sum ./*.vhd > SHA256SUMS)
+qemu-img compare -f raw -F vpc "$disk" "$image.vhd"
+qemu-img convert -f raw -O qcow2 "$disk" "$image.qcow2"
+qemu-img check -f qcow2 "$image.qcow2"
+qemu-img compare -f raw -F qcow2 "$disk" "$image.qcow2"
+(cd output && sha256sum ./*.vhd ./*.qcow2 > SHA256SUMS)
